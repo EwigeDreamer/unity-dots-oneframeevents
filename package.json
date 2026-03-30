@@ -1,0 +1,21 @@
+{
+  "name": "com.ewigedreamer.dots.oneframeevents",
+  "version": "0.1.0",
+  "displayName": "ED One Frame Events",
+  "description": "Simple event system for Unity DOTS",
+  "unity": "6000.3",
+  "documentationUrl": "",
+  "changelogUrl": "",
+  "licensesUrl": "",
+  "dependencies": { },
+  "keywords": [
+    "unity",
+    "dots",
+    "events"
+  ],
+  "author": {
+    "name": "Pavel Sborshchikov",
+    "email": "ewigedreamer@gmail.com",
+    "url": "https://github.com/EwigeDreamer"
+  }
+}
