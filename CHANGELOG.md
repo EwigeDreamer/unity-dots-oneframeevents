@@ -1,3 +1,6 @@
-## [0.1.0] - 2026-03-31
+## [0.1.0] - 2026-04-03
 ### Added
-- CodeGen
+- .NET project for source generator dll
+- IOneFrameEvent
+- OneFrameEventSimulationSystemGroup
+- Source Generator dll
