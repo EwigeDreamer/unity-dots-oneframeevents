@@ -9,7 +9,7 @@ To use this in your Unity project import it from Unity Package Manager. You can 
 
 ## Usage
 
-Implement an event component and extend it from IOneFrameEvent.
+Implement an event component and inherit it from IOneFrameEvent.
 
 ```csharp
 using ED.DOTS.OneFrameEvents;
