@@ -1,6 +1,4 @@
-﻿using System;
-using System.Text;
-using Microsoft.CodeAnalysis;
+﻿using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 
 namespace OneFrameEventsSourceGenerator
@@ -9,6 +7,7 @@ namespace OneFrameEventsSourceGenerator
     {
         public const string Namespace = "ED.DOTS.OneFrameEvents";
         public const string EventInterface = "IOneFrameEvent";
+        public const string ComponentInterface = "IComponentData";
         public const string SystemGroup = "OneFrameEventSimulationSystemGroup";
         
         public static string SystemName(string componentName) => $"{componentName}_System";
@@ -25,5 +24,7 @@ namespace OneFrameEventsSourceGenerator
             }
             return null;
         }
+
+        public static string GetFullName(string @namespace, string name) => $"{(string.IsNullOrWhiteSpace(@namespace) ? "" : $"{@namespace}.")}{name}";
     }
 }

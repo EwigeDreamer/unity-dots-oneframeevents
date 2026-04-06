@@ -5,13 +5,14 @@ namespace OneFrameEventsSourceGenerator
 {
     public static class SimulationEventSourceGeneratorUtility
     {
-        public static void Generate(StructDeclarationSyntax node, GeneratorExecutionContext context, FileLogger logger)
+        public static void Generate(TypeDeclarationSyntax node, GeneratorExecutionContext context, FileLogger logger)
         {
             var component = node.Identifier.Text;
             var @namespace = CodeBuildHelper.GetNamespace(node);
             var assembly = context.Compilation.AssemblyName;
+            var fullName = CodeBuildHelper.GetFullName(@namespace, component);
                     
-            logger.Info($"{nameof(SimulationEventSourceGeneratorUtility)}: Processing component {@namespace}.{component} [{assembly}]");
+            logger.Info($"{nameof(SimulationEventSourceGeneratorUtility)}: Processing component {fullName} [{assembly}]");
             
             GenerateRequest(component, @namespace, out var requestFile, out var requestCode);
             context.AddSource(requestFile, requestCode);
@@ -32,13 +33,14 @@ namespace OneFrameEventsSourceGenerator
 
 using Unity.Entities;
 
-namespace {@namespace}
-{{
+{(string.IsNullOrWhiteSpace(@namespace) ? "" : $@"namespace {@namespace}
+{{")}
     public struct {request} : IComponentData
     {{
         public {component} Value;
     }}
-}}
+{(string.IsNullOrWhiteSpace(@namespace) ? "" : $@"
+}}")}
 ";
         }
 
@@ -53,65 +55,117 @@ namespace {@namespace}
 
 using {CodeBuildHelper.Namespace};
 using Unity.Burst;
+using Unity.Burst.Intrinsics;
 using Unity.Collections;
 using Unity.Entities;
 
-namespace {@namespace}
-{{
+{(string.IsNullOrWhiteSpace(@namespace) ? "" : $@"namespace {@namespace}
+{{")}
     [BurstCompile]
     [UpdateInGroup(typeof({CodeBuildHelper.SystemGroup}))]
     [WorldSystemFilter(WorldSystemFilterFlags.ClientSimulation | WorldSystemFilterFlags.ServerSimulation | WorldSystemFilterFlags.LocalSimulation)]
     public partial struct {system} : ISystem
     {{
+        private EntityQuery _ecbSingletonQuery;
+        private EntityQuery _eventQuery;
+        private EntityQuery _requestQuery;
+
+        private EntityTypeHandle _entityType;
+        private ComponentTypeHandle<{request}> _requestType;
+        
         [BurstCompile]
         public void OnCreate(ref SystemState state)
         {{
-            state.RequireForUpdate<EndSimulationEntityCommandBufferSystem.Singleton>();
-
-            using var queries = new NativeList<EntityQuery>(Allocator.Temp);
-            queries.Add(new EntityQueryBuilder(Allocator.Temp)
+            _ecbSingletonQuery = new EntityQueryBuilder(Allocator.Temp)
+                .WithAll<EndSimulationEntityCommandBufferSystem.Singleton>()
+                .WithOptions(EntityQueryOptions.IncludeSystems)
+                .Build(ref state);
+            
+            _eventQuery = new EntityQueryBuilder(Allocator.Temp)
                 .WithAll<{component}>()
-                .Build(ref state));
-            queries.Add(new EntityQueryBuilder(Allocator.Temp)
+                .Build(ref state);
+            _requestQuery = new EntityQueryBuilder(Allocator.Temp)
                 .WithAll<{request}>()
-                .Build(ref state));
+                .Build(ref state);
+            using var queries = new NativeList<EntityQuery>(Allocator.Temp);
+            queries.Add(_eventQuery);
+            queries.Add(_requestQuery);
+            
+            state.RequireForUpdate(_ecbSingletonQuery);
             state.RequireAnyForUpdate(queries.AsArray());
+
+            _entityType = state.GetEntityTypeHandle();
+            _requestType = state.GetComponentTypeHandle<{request}>();
         }}
 
         [BurstCompile]
         public void OnUpdate(ref SystemState state)
         {{
-            var ecb = SystemAPI
-                .GetSingleton<EndSimulationEntityCommandBufferSystem.Singleton>()
-                .CreateCommandBuffer(state.WorldUnmanaged);
+            _entityType.Update(ref state);
+            _requestType.Update(ref state);
             
-            state.Dependency = new DestroyJob {{ Ecb = ecb.AsParallelWriter() }}.ScheduleParallel(state.Dependency);
-            state.Dependency = new RequestJob {{ Ecb = ecb.AsParallelWriter() }}.ScheduleParallel(state.Dependency);
+            var ecb = _ecbSingletonQuery
+                .GetSingleton<EndSimulationEntityCommandBufferSystem.Singleton>()
+                .CreateCommandBuffer(state.WorldUnmanaged)
+                .AsParallelWriter();
+            
+            var destroyJob = new DestroyJob
+            {{
+                Ecb = ecb,
+                EntityType = _entityType,
+            }};
+            
+            var requestJob = new RequestJob
+            {{
+                Ecb = ecb,
+                RequestType = _requestType,
+                EntityType = _entityType,
+            }};
+
+            state.Dependency = destroyJob.ScheduleParallel(_eventQuery, state.Dependency);
+            state.Dependency = requestJob.ScheduleParallel(_requestQuery, state.Dependency);
         }}
 
         [BurstCompile]
-        [WithAll(typeof({component}))]
-        public partial struct DestroyJob : IJobEntity
+        private struct DestroyJob : IJobChunk
         {{
             public EntityCommandBuffer.ParallelWriter Ecb;
-            void Execute(Entity entity, [ChunkIndexInQuery] int chunkIndex)
+            public EntityTypeHandle EntityType;
+
+            [BurstCompile]
+            public void Execute(in ArchetypeChunk chunk, int unfilteredChunkIndex, bool useEnabledMask, in v128 chunkEnabledMask)
             {{
-                Ecb.DestroyEntity(chunkIndex, entity);
+                var entities = chunk.GetNativeArray(EntityType);
+                for (int i = 0; i < chunk.Count; i++)
+                {{
+                    Ecb.DestroyEntity(unfilteredChunkIndex, entities[i]);
+                }}
             }}
         }}
 
         [BurstCompile]
-        public partial struct RequestJob : IJobEntity
+        private struct RequestJob : IJobChunk
         {{
             public EntityCommandBuffer.ParallelWriter Ecb;
-            void Execute(Entity entity, {request} request, [ChunkIndexInQuery] int chunkIndex)
+            public ComponentTypeHandle<{request}> RequestType;
+            public EntityTypeHandle EntityType;
+
+            [BurstCompile]
+            public void Execute(in ArchetypeChunk chunk, int unfilteredChunkIndex, bool useEnabledMask, in v128 chunkEnabledMask)
             {{
-                Ecb.AddComponent(chunkIndex, Ecb.CreateEntity(chunkIndex), request.Value);
-                Ecb.DestroyEntity(chunkIndex, entity);
+                var requests = chunk.GetNativeArray(ref RequestType);
+                var entities = chunk.GetNativeArray(EntityType);
+                for (int i = 0; i < chunk.Count; i++)
+                {{
+                    var newEntity = Ecb.CreateEntity(unfilteredChunkIndex);
+                    Ecb.AddComponent(unfilteredChunkIndex, newEntity, requests[i].Value);
+                    Ecb.DestroyEntity(unfilteredChunkIndex, entities[i]);
+                }}
             }}
         }}
     }}
-}}
+{(string.IsNullOrWhiteSpace(@namespace) ? "" : $@"
+}}")}
 ";
         }
     }

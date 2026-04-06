@@ -10,6 +10,7 @@ namespace OneFrameEventsSourceGenerator
 
         public void Initialize(GeneratorInitializationContext context)
         {
+            Logger.Info($"{GetType().Name}: Initializing...");
             context.RegisterForSyntaxNotifications(() => new SyntaxReceiver(Logger));
         }
 
@@ -18,6 +19,8 @@ namespace OneFrameEventsSourceGenerator
             try
             {
                 if (!(context.SyntaxReceiver is SyntaxReceiver receiver)) return;
+                
+                Logger.Info($"{GetType().Name}: Executing... [{context.Compilation.AssemblyName}]");
 
                 foreach (var node in receiver.OneFrameEvents)
                 {
@@ -29,6 +32,5 @@ namespace OneFrameEventsSourceGenerator
                 Logger.Error(e.ToString());
             }
         }
-
     }
 }

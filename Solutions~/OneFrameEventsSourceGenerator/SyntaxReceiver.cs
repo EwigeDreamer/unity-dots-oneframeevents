@@ -8,7 +8,7 @@ namespace OneFrameEventsSourceGenerator
     {
         private FileLogger Logger { get; }
         
-        public readonly List<StructDeclarationSyntax> OneFrameEvents = new List<StructDeclarationSyntax>();
+        public readonly List<TypeDeclarationSyntax> OneFrameEvents = new List<TypeDeclarationSyntax>();
 
         public SyntaxReceiver(FileLogger logger)
         {
@@ -17,24 +17,52 @@ namespace OneFrameEventsSourceGenerator
 
         public void OnVisitSyntaxNode(SyntaxNode syntaxNode)
         {
-            if (!(syntaxNode is StructDeclarationSyntax structNode)) return;
+            if (!(syntaxNode is TypeDeclarationSyntax typeNode)) return;
+            if (!DerivesIOneFrameEvent(typeNode)) return;
+
+            var name = typeNode.Identifier.Text;
+            var @namespace = CodeBuildHelper.GetNamespace(typeNode);
+            var fullName = CodeBuildHelper.GetFullName(@namespace, name);
             
-            if (IsOneFrameEvent(structNode))
+            Logger.Info($"{GetType().Name}: Founded {CodeBuildHelper.EventInterface}: {fullName}");
+
+            bool canAdd = true;
+            
+            if (!(typeNode is StructDeclarationSyntax))
             {
-                OneFrameEvents.Add(structNode);
-                
-                var component = structNode.Identifier.Text;
-                var @namespace = CodeBuildHelper.GetNamespace(structNode);
-                Logger.Info($"{GetType().Name}: founded {CodeBuildHelper.EventInterface}: {@namespace}.{component}");
+                Logger.Error($"{GetType().Name}: The type is not a structure. name: {fullName}, kind: {typeNode.Kind()}");
+                canAdd = false;
+            }
+            
+            if (!DerivesIComponentData(typeNode))
+            {
+                Logger.Error($"{GetType().Name}: The type does not inherit the {CodeBuildHelper.ComponentInterface} interface. name: {fullName}");
+                canAdd = false;
+            }
+            
+            if (canAdd)
+            {
+                OneFrameEvents.Add(typeNode);
+                Logger.Info($"{GetType().Name}: Added: {fullName}");
             }
         }
 
-        private bool IsOneFrameEvent(StructDeclarationSyntax node)
+        private static bool DerivesIOneFrameEvent(TypeDeclarationSyntax node)
         {
             if (node.BaseList == null) return false;
             foreach (var type in node.BaseList.Types)
                 if (type.Type is IdentifierNameSyntax name)
-                    if (name.Identifier.Text == CodeBuildHelper.EventInterface)
+                    if (name.Identifier.Text.Equals(CodeBuildHelper.EventInterface))
+                        return true;
+            return false;
+        }
+
+        private static bool DerivesIComponentData(TypeDeclarationSyntax node)
+        {
+            if (node.BaseList == null) return false;
+            foreach (var type in node.BaseList.Types)
+                if (type.Type is IdentifierNameSyntax name)
+                    if (name.Identifier.Text.Equals(CodeBuildHelper.ComponentInterface))
                         return true;
             return false;
         }
